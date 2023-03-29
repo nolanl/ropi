@@ -1,0 +1,33 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then
+   echo Usage: $0 img >&2
+   exit 99
+fi
+IMG="$1"
+
+TMPDIR="$(mktemp -d --tmpdir piemu.XXXXXXXXXX)"
+if [ -z "$TMPDIR" ]; then
+    echo "Couldn't create tempdir" >&2
+    exit 98
+fi
+trap "rm -rf $TMPDIR" EXIT
+
+#MTOOLS_SKIP_CHECK=1 mdir -i2023-02-21-raspios-bullseye-arm64-lite.img@@4M ::
+FATOFF=4M #XXX Don't hardcode this.
+
+#XXX Support 32bit OSes too.
+
+KERNEL="$TMPDIR/kernel"
+mcopy -i$IMG@@$FATOFF ::kernel8.img "$KERNEL"
+DTB="$TMPDIR/dtb"
+mcopy -i$IMG@@$FATOFF ::bcm2710-rpi-3-b.dtb "$DTB"
+KARGS="$(mtype -i$IMG@@$FATOFF ::cmdline.txt)"
+KARGS="$KARGS console=ttyAMA0,115200"
+
+qemu-system-aarch64 -M raspi3b -m 1024 -kernel "$KERNEL" -dtb "$DTB" -append "$KARGS" \
+                    -device usb-net,netdev=net0 -netdev user,id=net0,hostfwd=tcp::22222-:22 \
+                    -drive if=sd,format=raw,index=0,file="$IMG" \
+                    -nographic -chardev stdio,id=char0,mux=on,signal=off \
+                    -serial chardev:char0 -mon chardev=char0
+#XXX with both serial consoles wired up, you have to "Ctrl-a c" 2x to be able to type into the serial console.

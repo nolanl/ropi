@@ -1,0 +1,20 @@
+Prepare a read-only raspbian image.
+
+$ ./prepimg PATH_TO_RASPBIAN_IMG
+$ ./piemu PATH_TO_RASPBIAN_IMG
+  Wait, then kill qemu with "Ctrl-a x" when it fails to reboot
+  May have to run "reset" if qemu left the terminal in a bad state.
+$ ./piemu PATH_TO_RASPBIAN_IMG
+  Set root passwd for serial console login, if desired: "sudo passwd root"
+  Login ropi/ropi and run "sudo /boot/postboot.sh"
+  Shutdown: "sudo shutdown -h now"
+$ ./piemu PATH_TO_RASPBIAN_IMG
+  Any other customization (don't forget to "/root/makerw" first).
+  Shutdown.
+  Flash image to SDcard.
+
+#XXX Why does raspbian hang while rebooting itself after resizing the rootfs?
+
+#XXX Try:
+# add "systemd.run" magic to cmdline.txt to run postboot.sh
+# postboot.sh removes systemd.run before it deletes itself.

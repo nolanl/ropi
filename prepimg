@@ -1,0 +1,100 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then
+   echo Usage: $0 img username >&2
+   exit 99
+fi
+IMG="$1"
+
+USERNAME="ropi"
+
+next_power_of_2() {
+    k=1
+    while [ $k -lt $1 ]; do
+        k=$((k*2))
+    done
+    echo $k
+}
+
+FATOFF=4M #XXX Don't hardcode this.
+
+#Enable sshd.
+mcopy -i$IMG@@$FATOFF <(echo) ::ssh
+
+#Add user.
+CRYPTPASS="$(echo "$USERNAME" | openssl passwd -stdin -6)"
+mcopy -i$IMG@@$FATOFF <(echo "$USERNAME:$CRYPTPASS") ::userconf.txt
+
+#Enable serial console
+CONFIG="$(mtype -i$IMG@@$FATOFF ::config.txt)"
+mcopy -o -i$IMG@@$FATOFF <(echo -e "$CONFIG\nenable_uart=1") ::config.txt
+
+#Write out a script to run later after boot to setup keys, ro root, etc.
+mcopy -i$IMG@@$FATOFF /dev/stdin ::postboot.sh <<EOF
+#!/bin/bash
+    if [ \$UID -ne 0 ]; then
+        echo "postboot.sh must be run as root! Use sudo." >&2
+        exit 99
+    fi
+
+    cd /
+
+    #Setup root's passwordless ssh login
+    mkdir /root/.ssh
+    echo "$(cat $HOME/.ssh/*.pub)" > /root/.ssh/authorized_keys
+    chmod 644 /root/.ssh/authorized_keys
+    echo "PermitRootLogin prohibit-password" >> /etc/ssh/sshd_config
+    systemctl restart ssh
+
+    #Remove $USERNAME user.
+    USERGROUPS_ENAB=yes userdel --force --remove $USERNAME
+
+    #Disable swap
+    swapoff -a
+    rm /var/swap
+    sed -i 's/$/ fastboot noswap ro/1' /boot/cmdline.txt
+
+    #Update packages
+    apt-get -y update
+    apt-get -y dist-upgrade
+
+    #Setup Read-only root.
+    apt-get -y install busybox-syslogd
+    apt-get -y remove --purge triggerhappy logrotate dphys-swapfile rsyslog
+    apt-get -y autoremove --purge
+
+    sed -Ei '/ \/(boot)? / s/defaults/defaults,ro/' /etc/fstab
+    echo "tmpfs /tmp tmpfs rw,nosuid,nodev,size=16m 0 0" >> /etc/fstab
+    echo "tmpfs /var/tmp tmpfs rw,nosuid,nodev,size=16m 0 0" >> /etc/fstab
+    echo "tmpfs /var/log tmpfs rw,nosuid,nodev,size=16m 0 0" >> /etc/fstab
+
+    rm -rf /var/lib/dhcpcd /etc/resolv.conf
+    ln -s /tmp /var/lib/dhcpcd
+    ln -sf /tmp/resolv.conf /etc/resolv.conf
+
+    #Rewrite the rasbian image random-seed since it won't be updated going forward.
+    dd if=/dev/urandom of=/var/lib/systemd/random-seed bs=512 count=1
+
+    #Write out scripts to enable/disable ro-root.
+    echo "mount -oremount,rw /; mount -oremount,rw /boot" >> /root/makerw
+    echo "mount -oremount,ro /; mount -oremount,ro /boot; sync" >> /root/makero
+    chmod a+x /root/maker[wo]
+
+    #Remove /boot/postboot.sh
+    rm /boot/postboot.sh
+
+    echo "root login and read-only root configured. Shutdown or reboot."
+EOF
+
+#Qemu requires SD card images to be a power of 2.
+IMGSIZE=$(stat -c %s "$IMG")
+NEXTPOW2=$(next_power_of_2 $IMGSIZE)
+if [ $IMGSIZE -ne $NEXTPOW2 ]; then
+    qemu-img resize $IMG $NEXTPOW2
+    echo
+    echo "##############"
+    echo Resized image from $IMG to $NEXTPOW2.
+    echo This may require you to restart qemu if rebooting after resizing the filesystem hangs!
+    echo "##############"
+    echo Once fully booted, log in as $USERNAME/$USERNAME and run: sudo /boot/postboot.sh
+fi
