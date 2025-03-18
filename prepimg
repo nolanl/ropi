@@ -90,7 +90,7 @@ EOF
 IMGSIZE=$(stat -c %s "$IMG")
 NEXTPOW2=$(next_power_of_2 $IMGSIZE)
 if [ $IMGSIZE -ne $NEXTPOW2 ]; then
-    qemu-img resize $IMG $NEXTPOW2
+    qemu-img resize -f raw $IMG $NEXTPOW2
     echo
     echo "##############"
     echo Resized image from $IMG to $NEXTPOW2.
