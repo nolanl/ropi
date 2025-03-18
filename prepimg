@@ -16,7 +16,7 @@ next_power_of_2() {
     echo $k
 }
 
-FATOFF=4M #XXX Don't hardcode this.
+FATOFF="$(( $(fdisk -l -o Start,Type $IMG | grep FAT | awk '{print $1}') * 512))"
 
 #Enable sshd.
 mcopy -i$IMG@@$FATOFF <(echo) ::ssh

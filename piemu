@@ -14,7 +14,7 @@ fi
 trap "rm -rf $TMPDIR" EXIT
 
 #MTOOLS_SKIP_CHECK=1 mdir -i2023-02-21-raspios-bullseye-arm64-lite.img@@4M ::
-FATOFF=4M #XXX Don't hardcode this.
+FATOFF="$(( $(fdisk -l -o Start,Type $IMG | grep FAT | awk '{print $1}') * 512))"
 
 #XXX Support 32bit OSes too.
 
